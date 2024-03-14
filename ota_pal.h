@@ -31,7 +31,7 @@
 #ifndef OTA_PAL_H_
 #define OTA_PAL_H_
 
-#include "ota.h"
+#include "job_parser.h"
 
 /* OTA PAL signing algorithm configurations. */
 #define OTA_PAL_CODE_SIGNING_RSA    ( 0 )
@@ -53,6 +53,61 @@
 #define OTA_PAL_SIGNATURE_FORMAT   ( OTA_PAL_SIGNATURE_ASN1_DER )
 #endif
 
+
+/**
+ * @ingroup ota_enum_types
+ * @brief OTA Image states.
+ *
+ * After an OTA update image is received and authenticated, it is logically moved to
+ * the Self Test state by the OTA agent pending final acceptance. After the image is
+ * activated and tested by your user code, you should put it into either the Accepted
+ * or Rejected state by calling @ref OTA_SetImageState ( OtaImageStateAccepted ) or
+ * @ref OTA_SetImageState ( OtaImageStateRejected ). If the image is accepted, it becomes
+ * the main firmware image to be booted from then on. If it is rejected, the image is
+ * no longer valid and shall not be used, reverting to the last known good image.
+ *
+ * If you want to abort an active OTA transfer, you may do so by calling the API
+ * @ref OTA_SetImageState ( OtaImageStateAborted ).
+ */
+typedef enum OtaImageState
+{
+    OtaImageStateUnknown = 0,  /*!< @brief The initial state of the OTA MCU Image. */
+    OtaImageStateTesting = 1,  /*!< @brief The state of the OTA MCU Image post successful download and reboot. */
+    OtaImageStateAccepted = 2, /*!< @brief The state of the OTA MCU Image post successful download and successful self_test. */
+    OtaImageStateRejected = 3, /*!< @brief The state of the OTA MCU Image when the job has been rejected. */
+    OtaImageStateAborted = 4,  /*!< @brief The state of the OTA MCU Image after a timeout publish to the stream request fails.
+                                *   Also if the OTA MCU image is aborted in the middle of a stream. */
+    OtaLastImageState = OtaImageStateAborted
+} OtaImageState_t;
+
+/**
+ * @ingroup ota_enum_types
+ * @brief OTA Platform Image State.
+ *
+ * The image state set by platform implementation.
+ */
+typedef enum OtaPalImageState
+{
+    OtaPalImageStateUnknown = 0,   /*!< @brief The initial state of the OTA PAL Image. */
+    OtaPalImageStatePendingCommit, /*!< @brief OTA PAL Image awaiting update. */
+    OtaPalImageStateValid,         /*!< @brief OTA PAL Image is valid. */
+    OtaPalImageStateInvalid        /*!< @brief OTA PAL Image is invalid. */
+} OtaPalImageState_t;
+
+/**
+ * @ingroup ota_enum_types
+ * @brief OTA Platform Image State.
+ *
+ * The image state set by platform implementation.
+ */
+typedef enum OtaPalJobDocProcessingResult
+{
+    OtaPalJobDocFileCreated = 0,
+	OtaPalJobDocFileCreateFailed,
+    OtaPalNewImageBooted,
+    OtaPalNewImageBootFailed,
+    OtaPalJobDocProcessingStateInvalid
+} OtaPalJobDocProcessingResult_t;
 
 /**
  * @brief Abort an OTA transfer.
@@ -77,7 +132,7 @@
  *   OtaPalSuccess: Aborting access to the open file was successful.
  *   OtaPalFileAbort: Aborting access to the open file context was unsuccessful.
  */
-OtaPalStatus_t otaPal_Abort( OtaFileContext_t * const pFileContext );
+bool otaPal_Abort( AfrOtaJobDocumentFields_t * const pFileContext );
 
 /**
  * @brief Create a new receive file.
@@ -107,7 +162,7 @@ OtaPalStatus_t otaPal_Abort( OtaFileContext_t * const pFileContext );
  *                             non-volatile memory. If this error is returned, then the sub error
  *                             should be set to the appropriate platform specific value.
  */
-OtaPalStatus_t otaPal_CreateFileForRx( OtaFileContext_t * const pFileContext );
+OtaPalJobDocProcessingResult_t otaPal_CreateFileForRx( AfrOtaJobDocumentFields_t * const pFileContext );
 
 /**
  * @brief Authenticate and close the underlying receive file in the specified OTA context.
@@ -134,7 +189,7 @@ OtaPalStatus_t otaPal_CreateFileForRx( OtaFileContext_t * const pFileContext );
  *   OtaPalBadSignerCert: The signer certificate was not readable or zero length.
  *   OtaPalFileClose: Error in low level file close.
  */
-OtaPalStatus_t otaPal_CloseFile( OtaFileContext_t * const pFileContext );
+bool otaPal_CloseFile( AfrOtaJobDocumentFields_t * const pFileContext );
 
 /**
  * @brief Write a block of data to the specified file at the given offset.
@@ -155,9 +210,9 @@ OtaPalStatus_t otaPal_CloseFile( OtaFileContext_t * const pFileContext );
  * @return The number of bytes written successfully, or a negative error code from the platform
  * abstraction layer.
  */
-int16_t otaPal_WriteBlock( OtaFileContext_t * const pFileContext,
+int16_t otaPal_WriteBlock( AfrOtaJobDocumentFields_t * const pFileContext,
                            uint32_t ulOffset,
-                           uint8_t * const pData,
+                           uint8_t * const pcData,
                            uint32_t ulBlockSize );
 
 /**
@@ -180,7 +235,7 @@ int16_t otaPal_WriteBlock( OtaFileContext_t * const pFileContext,
  *   OtaPalSuccess on success.
  *   OtaPalActivateFailed: The activation of the new OTA image failed.
  */
-OtaPalStatus_t otaPal_ActivateNewImage( OtaFileContext_t * const pFileContext );
+bool otaPal_ActivateNewImage( AfrOtaJobDocumentFields_t * const pFileContext );
 
 /**
  * @brief Attempt to set the state of the OTA update image.
@@ -203,7 +258,7 @@ OtaPalStatus_t otaPal_ActivateNewImage( OtaFileContext_t * const pFileContext );
  *   OtaPalRejectFailed: failed to roll back the update image as requested by OtaImageStateRejected.
  *   OtaPalCommitFailed: failed to make the update image permanent as requested by OtaImageStateAccepted.
  */
-OtaPalStatus_t otaPal_SetPlatformImageState( OtaFileContext_t * const pFileContext,
+bool otaPal_SetPlatformImageState( AfrOtaJobDocumentFields_t * const pFileContext,
                                              OtaImageState_t eState );
 
 /**
@@ -229,7 +284,7 @@ OtaPalStatus_t otaPal_SetPlatformImageState( OtaFileContext_t * const pFileConte
  *
  *   NOTE: OtaPalImageStateUnknown should NEVER be returned and indicates an implementation error.
  */
-OtaPalImageState_t otaPal_GetPlatformImageState( OtaFileContext_t * const pFileContext );
+OtaPalImageState_t otaPal_GetPlatformImageState( AfrOtaJobDocumentFields_t * const pFileContext );
 
 /**
  * @brief Reset the device.
@@ -245,5 +300,5 @@ OtaPalImageState_t otaPal_GetPlatformImageState( OtaFileContext_t * const pFileC
  *         the MCU specific sub error code. See ota_platform_interface.h for the OtaPalMainStatus_t
  *         error codes and your specific PAL implementation for the sub error code.
  */
-OtaPalStatus_t otaPal_ResetDevice( OtaFileContext_t * const pFileContext );
+bool otaPal_ResetDevice( AfrOtaJobDocumentFields_t * const pFileContext );
 #endif /* ifndef OTA_PAL_H_ */

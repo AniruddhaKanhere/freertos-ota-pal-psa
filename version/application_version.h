@@ -24,7 +24,7 @@
 #define APPLICATION_VERSION_H_
 
 #include "ota_config.h"
-#include "ota_appversion32.h"
+#include "ota_pal_tfm.h"
 #include "psa/update.h"
 
 /**
